@@ -29,6 +29,7 @@ pub struct App {
     recent: Option<Vec<String>>,
     out: tokio::io::Stdout,
     matcher: SkimMatcherV2,
+    iris: Vec<String>,
 }
 
 impl Default for App {
@@ -37,19 +38,13 @@ impl Default for App {
             recent: None,
             out: async_stdout(),
             matcher: SkimMatcherV2::default(),
+            iris: Vec::new(),
         }
     }
 }
 
 #[tokio::main]
 pub async fn main() {
-    // let mut bk = BkTree::new(levenshtein);
-    // bk.insert("hello".to_string());
-    // bk.insert("hellowijsodjfoisd".to_string());
-    // let result = bk.fuzzy_search("hell", 1000);
-    // for i in result {
-    //     println!("{i}");
-    // }
     let mut requests = json_input_stream(async_stdin());
     let mut app = App::default();
     app.recent = Some(init());
@@ -58,6 +53,7 @@ pub async fn main() {
             Ok(request) => match request {
                 Request::Activate(id) => app.activate(id).await,
                 Request::Search(query) => app.search(query).await,
+                // Request::Context(id) => app.activate(id).await,
                 Request::Exit => break,
                 _ => (),
             },
@@ -68,47 +64,34 @@ pub async fn main() {
     }
 }
 
-fn read(s: &String) -> u32 {
-    let mut p = 0;
-    let mut x: u32 = 0;
-    while let Ok(ch) = s[p..=p].parse::<u8>() {
-        x = (x << 1) + (x << 3) + ch as u32;
-        p += 1;
-    }
-    return x;
-}
 impl App {
     async fn activate(&mut self, id: u32) {
-        let selected = &self.recent.clone().unwrap()[id as usize];
-        let fid: u32 = read(selected);
-        let o = String::from_utf8(
-            Command::new("cliphist")
-                .arg("decode")
-                .arg(fid.to_string())
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap();
-        Command::new("wl-copy").arg(o).spawn().unwrap();
+        let selected = &self.iris[id as usize];
+        let fid: u32 = selected.split_once("	").unwrap().0.parse().unwrap();
+        Command::new("/usr/bin/sh")
+            .arg("-c")
+            .arg(format!("cliphist decode {fid} | wl-copy"))
+            .spawn()
+            .unwrap();
         crate::send(&mut self.out, PluginResponse::Close).await;
     }
 
     async fn search(&mut self, query: String) {
-        // send(&mut self.out, PluginResponse::Clear).await;
+        self.iris.clear();
         if let Some((recent, query)) = self.recent.as_mut().zip(normalized(&query)) {
             let mut recent: Vec<(Option<i64>, &String)> = recent
                 .iter()
                 .map(|i| (self.matcher.fuzzy_match(i, query.trim()), i))
                 .collect();
             recent.sort_by_key(|a| a.0);
-            for (id, (score, item)) in recent.iter().enumerate().rev() {
+            for (score, item) in recent.iter().rev() {
+                self.iris.push(item.to_owned().to_owned());
                 if score.is_some() {
                     let item = item.replace("	", " ");
                     crate::send(
                         &mut self.out,
                         PluginResponse::Append(PluginSearchResult {
-                            id: id as u32,
+                            id: self.iris.len() as u32 - 1,
                             name: item.to_owned(),
                             // description: self.matcher.fuzzy_match(&item, &query).unwrap().to_string(),
                             icon: Some(IconSource::Mime(Cow::Owned("weather-clear".to_string()))),
