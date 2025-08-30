@@ -1,0 +1,12 @@
+(
+    name: "cliphist",
+    description: "Syntax: cliphist <query>",
+    query: (
+        regex: "^cliphist|^clip|^cb|^cl",
+        help: "cliphist",
+        isolate: true,
+        no_sort: false
+    ),
+    bin: (path: "cliphist"),
+    icon: Name("weather-clear")
+)
